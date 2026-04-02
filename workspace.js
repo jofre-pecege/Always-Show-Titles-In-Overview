@@ -1,0 +1,206 @@
+import GLib from 'gi://GLib';
+import Clutter from 'gi://Clutter';
+import Shell from 'gi://Shell';
+
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import * as Workspace from 'resource:///org/gnome/shell/ui/workspace.js';
+
+import * as ObjectPrototype from './utils/objectPrototype.js';
+
+const WINDOW_OVERLAY_FADE_TIME = 200;
+let _settings;
+let _objectPrototype;
+let _appsGridShownId;
+let _idleId;
+let _allWindows;
+let _originalCreateBestLayout;
+
+function _showHideWorkspaceBackground(workspaceBackground) {
+    const hide_background = _settings.get_boolean('hide-background');
+    if (hide_background) {
+        workspaceBackground.hide();
+    } else {
+        workspaceBackground.show();
+    }
+}
+
+function _animateFromOverview(windowPreview, animate) {
+    const metaWorkspace = windowPreview._workspace.metaWorkspace;
+    // Seems that if metaWorkspace is null, the current workspace is active?
+    // See: workspace.Workspace#_isMyWindow() and workspacesView.SecondaryMonitorDisplay#_updateWorkspacesView()
+    if (metaWorkspace !== null && !metaWorkspace.active) {
+        return;
+    }
+
+    // Hide title and button gradually even if metaWorkspace is null
+
+    const toHide = [windowPreview._title, windowPreview._closeButton];
+    toHide.forEach(a => {
+        a.opacity = 255;
+        a.ease({
+            opacity: 0,
+            duration: animate ? WINDOW_OVERLAY_FADE_TIME : 0,
+            mode: Clutter.AnimationMode.EASE_OUT_EXPO
+        });
+    });
+}
+
+// TODO: better to hide the titles and close buttons before entering the app grid,
+// otherwise the titles and close buttons on windows are very noticeable.
+function _removeWindowDecorations() {
+    _appsGridShownId = Main.overview.dash.showAppsButton.connect('notify::checked', () => {
+        if (Main.overview.dash.showAppsButton.checked) {
+            _allWindows = [];
+            // Have to do this when the event loop is idle and to wait the underlying higher priority operations are completed
+            _idleId = GLib.idle_add(GLib.PRIORITY_LOW, () => {
+                // monitors
+                const workspacesViews = Main.overview._overview._controls._workspacesDisplay._workspacesViews;
+                if (workspacesViews && workspacesViews.length) {
+                    workspacesViews.forEach(wv => {
+                        const workspaces = wv._workspaces;
+                        // It's possible no workspace view bars on the second monitor
+                        if (workspaces && workspaces.length) {
+                            workspaces.forEach(workspace => {
+                                const windows = workspace._windows;
+                                if (windows.length) {
+                                    windows.forEach(windowPreview => {
+                                        windowPreview._closeButton._originalVisibleAWSM = windowPreview._closeButton.visible;
+                                        windowPreview._title._originalVisibleAWSM = windowPreview._title.visible;
+                                        windowPreview._closeButton.hide();
+                                        windowPreview._title.hide();
+                                        _allWindows.push(windowPreview);
+                                    });
+                                }
+                            });
+                        }
+                    });
+                }
+                return GLib.SOURCE_REMOVE;
+            });
+        } else {
+            _restoreWindowsVisible();
+        }
+    });
+}
+
+function _restoreWindowsVisible() {
+    if (_allWindows && _allWindows.length) {
+        _allWindows.forEach(windowPreview => {
+            windowPreview._closeButton.visible = windowPreview._closeButton._originalVisibleAWSM;
+            windowPreview._title.visible = windowPreview._title._originalVisibleAWSM;
+        });
+        _allWindows = null;
+    }
+}
+
+export const CustomWorkspace = class {
+
+    constructor(settings) {
+        _removeWindowDecorations();
+        _settings = settings;
+    }
+
+    enable() {
+        _objectPrototype = new ObjectPrototype.ObjectPrototype();
+
+        // Since other extensions (eg, dash-to-panel) could use Workspace.WorkspaceBackground, I can't just remove it any more.
+        // Hide the Workspace.WorkspaceBackground after be initialized
+        _objectPrototype.injectOrOverrideFunction(Workspace.WorkspaceBackground.prototype, '_init', true, function() {
+            _showHideWorkspaceBackground(this);
+        });
+
+        _objectPrototype.injectOrOverrideFunction(Workspace.Workspace.prototype, 'prepareToLeaveOverview', true, function() {
+            for (let i = 0; i < this._windows.length; i++) {
+                const windowPreview = this._windows[i];
+                _animateFromOverview(windowPreview, true);
+            }
+        });
+
+        // Group by app: monkey-patch to reorder windows before layout calculation
+        const windowTracker = Shell.WindowTracker.get_default();
+        _originalCreateBestLayout = Workspace.WorkspaceLayout.prototype._createBestLayout;
+
+        Workspace.WorkspaceLayout.prototype._createBestLayout = function(area) {
+            if (!_settings || !_settings.get_boolean('group-by-app'))
+                return _originalCreateBestLayout.call(this, area);
+
+            // 1. Group windows by app, ordering groups by the oldest window's sequence
+            const groups = new Map();
+            for (const wp of this._sortedWindows) {
+                const mw = this._windows.get(wp).metaWindow;
+                const app = windowTracker.get_window_app(mw);
+                const id = app ? app.get_id() : (mw.get_wm_class() || 'unknown');
+                
+                if (!groups.has(id))
+                    groups.set(id, { wins: [], seq: mw.get_stable_sequence() });
+                
+                const g = groups.get(id);
+                g.wins.push(wp);
+                g.seq = Math.min(g.seq, mw.get_stable_sequence());
+            }
+
+            // 2. Rebuild _sortedWindows in grouped order
+            const sorted = [...groups.values()]
+                .sort((a, b) => a.seq - b.seq)
+                .flatMap(g => g.wins);
+
+            this._sortedWindows.length = 0;
+            sorted.forEach(w => this._sortedWindows.push(w));
+
+            // 3. Spoof _cachedBoundingBox to force horizontal order in the layout calculation.
+            // windowCenter.x = box.x + width/2, windowCenter.y = box.y + height/2
+            // We use a large arbitrary step (1000) for X to ensure the native placement algorithm
+            // strictly treats them as non-overlapping items in a left-to-right sequence.
+            const saved = new Map();
+            let fx = 0;
+            for (const wp of this._sortedWindows) {
+                saved.set(wp, { x: wp._cachedBoundingBox.x, y: wp._cachedBoundingBox.y });
+                wp._cachedBoundingBox.x = fx - wp._cachedBoundingBox.width / 2;
+                wp._cachedBoundingBox.y = -wp._cachedBoundingBox.height / 2;
+                fx += 1000;
+            }
+
+            // 4. Call original layout logic with spoofed values
+            const result = _originalCreateBestLayout.call(this, area);
+
+            // 5. Restore original coordinates
+            saved.forEach((orig, wp) => {
+                wp._cachedBoundingBox.x = orig.x;
+                wp._cachedBoundingBox.y = orig.y;
+            });
+
+            return result;
+        };
+    }
+
+    // Destroy the created object
+    disable() { 
+        if (_settings) {
+            _settings = null;
+        }
+
+        if (_objectPrototype) {
+            _objectPrototype.removeInjections(Workspace.WorkspaceBackground.prototype);
+            _objectPrototype.removeInjections(Workspace.Workspace.prototype);
+            _objectPrototype = null;
+        }
+
+        if (_originalCreateBestLayout) {
+            Workspace.WorkspaceLayout.prototype._createBestLayout = _originalCreateBestLayout;
+            _originalCreateBestLayout = null;
+        }
+
+        if (_appsGridShownId) {
+            Main.overview.dash.showAppsButton.disconnect(_appsGridShownId);
+            _appsGridShownId = null;
+        }
+
+        if (_idleId) {
+            GLib.source_remove(_idleId);
+            _idleId = null;
+        }
+
+        _restoreWindowsVisible();
+    }
+
+}

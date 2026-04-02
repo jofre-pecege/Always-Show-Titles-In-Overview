@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+
+  <!-- Page: General -->
+  <object class="AdwPreferencesPage" id="page_general">
+    <property name="title" translatable="yes">General</property>
+    <property name="icon-name">emblem-system-symbolic</property>
+    <child>
+      <object class="AdwPreferencesGroup">
+        <property name="title" translatable="yes">Layout</property>
+        <child>
+          <object class="AdwActionRow">
+            <property name="title" translatable="yes">Group windows by application</property>
+            <child type="suffix">
+              <object class="GtkSwitch" id="group_by_app_switch">
+                <property name="valign">center</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwActionRow">
+            <property name="title" translatable="yes">Hide background</property>
+            <child type="suffix">
+              <object class="GtkSwitch" id="hide_background_switch">
+                <property name="valign">center</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwActionRow">
+            <property name="title" translatable="yes">Always show window close buttons</property>
+            <child type="suffix">
+              <object class="GtkSwitch" id="window_closebutton_switch">
+                <property name="valign">center</property>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="AdwPreferencesGroup">
+        <property name="title" translatable="yes">Window Scaling</property>
+        <child>
+          <object class="AdwActionRow">
+            <property name="title" translatable="yes">Window active size (default is 15 px)</property>
+            <child type="suffix">
+              <object class="GtkScale" id="window_active_size_inc_scale">
+                <property name="draw-value">True</property>
+                <property name="hexpand">True</property>
+                <property name="round-digits">0</property>
+                <property name="digits">0</property>
+                <property name="value-pos">right</property>
+                <property name="valign">center</property>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+  </object>
+
+  <!-- Page: Window Titles -->
+  <object class="AdwPreferencesPage" id="page_titles">
+    <property name="title" translatable="yes">Window Titles</property>
+    <property name="icon-name">format-text-bold-symbolic</property>
+    <child>
+      <object class="AdwPreferencesGroup">
+        <property name="title" translatable="yes">Position</property>
+        <child>
+          <object class="AdwActionRow">
+            <property name="title" translatable="yes">Window title position</property>
+            <child type="suffix">
+              <object class="GtkBox">
+                <property name="spacing">6</property>
+                <property name="valign">center</property>
+                <child>
+                  <object class="GtkToggleButton" id="window_title_position_bottom_button">
+                    <property name="label" translatable="yes">Bottom</property>
+                    <property name="active">True</property>
+                    <signal name="clicked" handler="window_title_position_bottom_button_clicked_cb" swapped="no"/>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkToggleButton" id="window_title_position_middle_button">
+                    <property name="label" translatable="yes">Center</property>
+                    <property name="group">window_title_position_bottom_button</property>
+                    <signal name="clicked" handler="window_title_position_middle_button_clicked_cb" swapped="no"/>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="AdwPreferencesGroup">
+        <property name="title" translatable="yes">Dynamic Behavior</property>
+        <child>
+          <object class="AdwActionRow">
+            <property name="title" translatable="yes">Move titles to bottom when fullscreen</property>
+            <child type="suffix">
+              <object class="GtkSwitch" id="move_window_title_to_bottom_when_fullscreen_switch">
+                <property name="valign">center</property>
+                <property name="active">True</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwActionRow">
+            <property name="title" translatable="yes">Move titles to bottom for video players</property>
+            <child type="suffix">
+              <object class="GtkSwitch" id="move_window_title_to_bottom_for_video_player_switch">
+                <property name="valign">center</property>
+                <property name="active">True</property>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+  </object>
+
+  <!-- Page: App Icons -->
+  <object class="AdwPreferencesPage" id="page_icons">
+    <property name="title" translatable="yes">App Icons</property>
+    <property name="icon-name">view-grid-symbolic</property>
+    <child>
+      <object class="AdwPreferencesGroup">
+        <property name="title" translatable="yes">Visibility</property>
+        <child>
+          <object class="AdwActionRow">
+            <property name="title" translatable="yes">Show app icons</property>
+            <child type="suffix">
+              <object class="GtkSwitch" id="show_app_icon_switch">
+                <property name="valign">center</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwActionRow">
+            <property name="title" translatable="yes">App icon position</property>
+            <child type="suffix">
+              <object class="GtkBox">
+                <property name="spacing">6</property>
+                <property name="valign">center</property>
+                <child>
+                  <object class="GtkToggleButton" id="position_bottom_button">
+                    <property name="label" translatable="yes">Bottom</property>
+                    <property name="active">True</property>
+                    <signal name="clicked" handler="position_bottom_button_clicked_cb" swapped="no"/>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkToggleButton" id="position_middle_button">
+                    <property name="label" translatable="yes">Center</property>
+                    <property name="group">position_bottom_button</property>
+                    <signal name="clicked" handler="position_middle_button_clicked_cb" swapped="no"/>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="AdwPreferencesGroup">
+        <property name="title" translatable="yes">Dynamic Behavior</property>
+        <child>
+          <object class="AdwActionRow">
+            <property name="title" translatable="yes">Hide icons when fullscreen</property>
+            <child type="suffix">
+              <object class="GtkSwitch" id="do_not_show_app_icon_when_fullscreen_switch">
+                <property name="valign">center</property>
+                <property name="active">True</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwActionRow">
+            <property name="title" translatable="yes">Hide icons for video players</property>
+            <child type="suffix">
+              <object class="GtkSwitch" id="hide_icon_for_video_player_switch">
+                <property name="valign">center</property>
+                <property name="active">True</property>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+  </object>
+
+</interface>

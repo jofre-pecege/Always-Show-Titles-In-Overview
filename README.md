@@ -1,14 +1,47 @@
 # Always-Show-Titles-In-Overview
-Always Show Titles In Overview can help to show titles of all windows in the Gnome 3 overview.
-![](https://github.com/nlpsuge/Always-Show-Titles-In-Overview/blob/master/Screenshot1.png)
 
-# Why I write such an extention
-Please read this post([Gnome 3.26: How to get the window titles in the activities view back?
-](https://www.reddit.com/r/gnome/comments/7dk1kb/gnome_326_how_to_get_the_window_titles_in_the/))
-and this comment below a bug report([Window picker layout improvements](https://bugzilla.gnome.org/show_bug.cgi?id=783953)).
+This a GNOME Shell extension that customizes the Overview by always showing titles on window thumbnails, grouping windows by application chronologically, and allowing advanced configurations like adjusting icon/title positions and hiding the background.
 
-# TODO
-- [x] Remove the fade time when leave a window
-- [ ] Find a way to distinguish the selected window and the others. 1.Maybe I can find a way to increase the light of the highlight around the selected window. 2.Or I can find a way to reverse the color of the title and it's background of the highlight around the selected window.
-- [ ] Be compatible with GNOME Shell v3.32
-- [ ] Wine-based application's window has no close button. Remove 'if (this._windowCanClose())' can fix this issue, but I don't know if it's a good idea.
+<p align="left">
+  <a href="https://extensions.gnome.org/extension/1689/always-show-titles-in-overview/">
+    <img alt="Get it on GNOME Extensions" width="228" src="https://raw.githubusercontent.com/andyholmes/gnome-shell-extensions-badge/master/get-it-on-ego.svg?sanitize=true"/>
+  </a>
+</p>
+
+## Overview
+
+![Overview Screenshot](images/overview.png)
+
+## Why I wrote this extension
+Please read this post ([Gnome 3.26: How to get the window titles in the activities view back?](https://www.reddit.com/r/gnome/comments/7dk1kb/gnome_326_how_to_get_the_window_titles_in_the/))
+and this comment below [Gnome Bugzilla - Window picker layout improvements](https://bugzilla.gnome.org/show_bug.cgi?id=783953).
+
+## Features
+| Features                                                             | Default Setting |
+|----------------------------------------------------------------------|-----------------|
+| Always show titles of all window thumbnails                          | -               |
+| Group windows by application (Chronological grouping)                | on              |
+| Always show close buttons of all window thumbnails                   | off             |
+| Window titles position (Bottom, Center)                              | Bottom          |
+| Move window titles to the bottom when fullscreen                     | on              |
+| Move window titles to the bottom for video/TV players                | on              |
+| Show app icons                                                       | on              |
+| App icon position (Bottom, Center)                                   | Bottom          |
+| Hide icons when fullscreen                                           | on              |
+| Hide icons for Video/TV players                                      | on              |
+| Tweak the window thumbnail active size increment (from 5 to 60 px)   | 15              |
+| Hide the overview background                                         | off             |
+
+## GNOME versions
+
+| GNOME version   | Branch          | Is default branch? |
+|-----------------|-----------------|--------------------|
+| GNOME 40 to 44  |  [gnome-40-44](https://github.com/nlpsuge/Always-Show-Titles-In-Overview/tree/gnome-40-44)  | No  |
+| GNOME 45+       |  [main](https://github.com/jofre-pecege/Always-Show-Titles-In-Overview/tree/main)      | Yes |
+
+
+## Settings
+This extension features a fully modernized tabbed settings interface using Libadwaita primitives (AdwPreferencesWindow).
+
+![Settings Dialog Screenshot](images/settings.png)
+
