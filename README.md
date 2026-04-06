@@ -1,3 +1,5 @@
+All credit goes to @nlpsuge. I only made minor modifications using the Antigravity agent, including changes to the app grouping layout and settings window.
+
 # Always-Show-Titles-In-Overview
 
 This a GNOME Shell extension that customizes the Overview by always showing titles on window thumbnails, grouping windows by application chronologically, and allowing advanced configurations like adjusting icon/title positions and hiding the background.
