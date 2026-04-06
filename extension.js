@@ -16,336 +16,378 @@ import Clutter from 'gi://Clutter';
 import Shell from 'gi://Shell';
 
 import {Extension, gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
-
 import * as WindowPreview from 'resource:///org/gnome/shell/ui/windowPreview.js';
 
 import {CustomWorkspace} from './workspace.js';
-import * as ObjectPrototype from './utils/objectPrototype.js';
+import {ObjectPrototype} from './utils/objectPrototype.js';
 
-
-let _alwaysShowWindowClosebuttons = true;
-
-let _settings = null;
-let customWorkspace;
-let _objectPrototype; 
-let windowTracker;
-
+// Static flags — pure data, no dynamic state
 const updateWindowPreviewFlags = {
     ICON_SHOW_OR_HIDE_WHEN_FULLSCREEN:          1 << 0,
     ICON_SHOW_OR_HIDE_FOR_VIDEO_PLAYER:         1 << 1,
     TITLE_MOVE_TO_BOTTOM_WHEN_FULLSCREEN:       1 << 2,
     TITLE_MOVE_TO_BOTTOM_FOR_VIDEO_PLAYER:      1 << 3,
-}
+};
 
-
-function _initializeObject(extensionObject) {
-    _settings = extensionObject.getSettings(
-        'org.gnome.shell.extensions.always-show-titles-in-overview');
-
-    customWorkspace = new CustomWorkspace(_settings);
-    customWorkspace.enable();
-
-    _objectPrototype = new ObjectPrototype.ObjectPrototype();
-
-    windowTracker = Shell.WindowTracker.get_default();
-}
-
-function _hideOrMove(windowPreview, flags) {
-    const window_is_fullscreen = windowPreview.metaWindow.is_fullscreen()
-    if (window_is_fullscreen) {
-        if (flags & updateWindowPreviewFlags.ICON_SHOW_OR_HIDE_WHEN_FULLSCREEN) {
-            windowPreview._icon.hide();
-        }
-        _moveTitleToBottom(windowPreview, flags & updateWindowPreviewFlags.TITLE_MOVE_TO_BOTTOM_WHEN_FULLSCREEN);
-        return;
-    }
-
-    if (flags & (updateWindowPreviewFlags.ICON_SHOW_OR_HIDE_FOR_VIDEO_PLAYER 
-                | updateWindowPreviewFlags.TITLE_MOVE_TO_BOTTOM_FOR_VIDEO_PLAYER)) {
-        const app = windowTracker.get_window_app(windowPreview.metaWindow);
-        const app_info = app?.get_app_info();
-        // app_info can be null if backed by a window (there's no .desktop file association)
-        // See: shell_app_is_window_backed()
-        let recheck = false;
-        const categories = app_info?.get_categories();
-        if (categories) {
-            const categoriesArr = categories.split(';')
-            for (const category of categoriesArr) {
-                // Support Video and TV
-                if (category === 'Video' || category === 'TV') {
-                    if (flags & updateWindowPreviewFlags.ICON_SHOW_OR_HIDE_FOR_VIDEO_PLAYER) {
-                        windowPreview._icon.hide();
-                    }
-                    _moveTitleToBottom(windowPreview, flags & updateWindowPreviewFlags.TITLE_MOVE_TO_BOTTOM_FOR_VIDEO_PLAYER);
-                    return;
-                } 
-                
-                // Support Video and Audio
-                if (category === 'Player') {
-                    recheck = true;
-                }
-            }
-        }
-
-        if (recheck) {
-            const supported_types = app_info?.get_supported_types();
-            if (supported_types) {
-                for (const supported_type of supported_types) {
-                    // Support Video
-                    if (supported_type.startsWith('video/')) {
-                        if (flags & updateWindowPreviewFlags.ICON_SHOW_OR_HIDE_FOR_VIDEO_PLAYER) {
-                            windowPreview._icon.hide();
-                        }
-                        _moveTitleToBottom(windowPreview, flags & updateWindowPreviewFlags.TITLE_MOVE_TO_BOTTOM_FOR_VIDEO_PLAYER);
-                        return;
-                    }
-                }
-            }
-        }
-    }
-}
-
-function _moveTitleToBottom(windowPreview, move) {
-    if (move) {
-        const titleConstraints = windowPreview._title.get_constraints();
-        for (const constraint of titleConstraints) {
-            if (constraint instanceof Clutter.AlignConstraint) {
-                const align_axis = constraint.align_axis;
-                if (align_axis === Clutter.AlignAxis.Y_AXIS) {
-                    // 0(top), 0.5(middle), 1(bottom)
-                    constraint.set_factor(1);
-                }
-            }
-        }
-    }
-}
-
-function _updatePosition(windowPreview, constraints, position, offset) {
-    let factor = 1;
-    if (position === 'Center') {
-        factor = 0.5
-    }
-
-    for (const constraint of constraints) {
-        if (constraint instanceof Clutter.AlignConstraint) {
-            const align_axis = constraint.align_axis;
-            if (align_axis === Clutter.AlignAxis.Y_AXIS) {
-                // 0(top), 0.5(middle), 1(bottom)
-                constraint.set_factor(factor);
-            }
-        }
-
-        // Change to coordinate to Clutter.BindCoordinate.Y
-        // And set offset to make the icon be up a bit
-        // And only when the icon is on the bottom needs to do this code block
-        if (offset) {
-            if (!(constraint instanceof Clutter.BindConstraint)) {
-                continue;
-            }
-            const coordinate = constraint.coordinate
-            // Note that `windowPreview._title` does not have `Clutter.BindCoordinate.POSITION` constraint, but it has `Clutter.BindCoordinate.Y` constraint, as well as `windowPreview._icon`
-            if (coordinate !== Clutter.BindCoordinate.POSITION) {
-                continue;
-            }
-
-            // Change icon's constraint in notify::realized,
-            // to fix 'st_widget_get_theme_node called on the widget [0x5g869999 StLabel.window-caption ("a title name")] which is not in the stage.'
-            windowPreview.connect('notify::realized', () => {
-                if (!windowPreview.realized) {
-                    return;
-                }
-
-                constraint.set_coordinate(Clutter.BindCoordinate.Y);
-                constraint.set_offset(offset());
-
-                windowPreview._title.ensure_style();
-                windowPreview._icon.ensure_style();
-            });
-        }
-    }
-}
-
-function _updateTitle(windowPreview) {
-    const titleConstraints = windowPreview._title.get_constraints();
-    const windowTitlePosition = _settings.get_string('window-title-position');
-    _updatePosition(windowPreview, titleConstraints, windowTitlePosition, null);    
-}
-
-function _updateAppIcon(windowPreview) {
-    // show or hide all app icons
-    const show_app_icon =  _settings.get_boolean('show-app-icon');
-    if (!show_app_icon) {
-        windowPreview._icon.hide();
-        return;
-    }
-
-    const iconConstraints = windowPreview._icon.get_constraints();
-    const appIconPosition = _settings.get_string('app-icon-position');
-
-    // Note: when `offset` is negative, the `_icon` moves upwards.
-    let offset = () => -windowPreview._title.height / 2;
-    _updatePosition(windowPreview, iconConstraints, appIconPosition, offset);
-}
+const POSITION_CENTER = 0.5;
+const POSITION_BOTTOM = 1.0;
 
 export default class AlwaysShowTitlesInOverviewExtension extends Extension {
 
     enable() {
-        _initializeObject(this);
+        this._settings = this.getSettings(
+            'org.gnome.shell.extensions.always-show-titles-in-overview');
 
-        // WindowPreview._init () is called N times if there are N windows when activate the Overview
-        // Always show titles and close buttons
-        _objectPrototype.injectOrOverrideFunction(WindowPreview.WindowPreview.prototype, '_init', true, function(animate) {
-            
-            if (this._windowCanClose() && _settings.get_boolean('always-show-window-closebuttons')) {
-                this._closeButton.show();
+        this._customWorkspace = new CustomWorkspace(this._settings);
+        this._customWorkspace.enable();
+
+        this._objectPrototype = new ObjectPrototype();
+        this._windowTracker = Shell.WindowTracker.get_default();
+
+        this._setupWindowPreviewInit();
+        this._setupAdjustOverlayOffsets();
+        this._setupShowOverlay();
+        this._setupHideOverlay();
+    }
+
+    disable() {
+        if (this._objectPrototype) {
+            this._objectPrototype.removeInjections(WindowPreview.WindowPreview.prototype);
+            this._objectPrototype = null;
+        }
+
+        if (this._customWorkspace) {
+            this._customWorkspace.disable();
+            this._customWorkspace = null;
+        }
+
+        if (this._windowTracker) {
+            this._windowTracker = null;
+        }
+
+        if (this._settings) {
+            this._settings = null;
+        }
+    }
+
+    // --- Monkey-patch setup methods ---
+
+    _setupWindowPreviewInit() {
+        const self = this;
+
+        this._objectPrototype.injectOrOverrideFunction(
+            WindowPreview.WindowPreview.prototype, '_init', true,
+            function(_animate) {
+                if (this._windowCanClose() && self._settings.get_boolean('always-show-window-closebuttons')) {
+                    this._closeButton.show();
+                }
+
+                this._title.show();
+                self._applyTitleFontSize(this);
+
+                // Remove original title offset constraints. Our layout engine handles Y positioning now.
+                const title_constraints = this._title.get_constraints();
+                for (const constraint of title_constraints) {
+                    if (constraint instanceof Clutter.BindConstraint) {
+                        const coordinate = constraint.coordinate
+                        if (coordinate === Clutter.BindCoordinate.Y) {
+                            constraint.set_offset(0)
+                        }
+                    }
+                }
+
+                self._updateAppIcon(this);
+                self._updateTitle(this);
+
+                let flags = 0;
+                const iconWhenFullscreen = self._settings.get_boolean('do-not-show-app-icon-when-fullscreen');
+                const iconForVideoPlayer = self._settings.get_boolean('hide-icon-for-video-player');
+                if (iconWhenFullscreen) flags |= updateWindowPreviewFlags.ICON_SHOW_OR_HIDE_WHEN_FULLSCREEN;
+                if (iconForVideoPlayer) flags |= updateWindowPreviewFlags.ICON_SHOW_OR_HIDE_FOR_VIDEO_PLAYER;
+                
+                const titleWhenFullscreen = self._settings.get_boolean('move-window-title-to-bottom-when-fullscreen');
+                const titleForVideoPlayer = self._settings.get_boolean('move-window-title-to-bottom-for-video-player');
+                if (titleWhenFullscreen) flags |= updateWindowPreviewFlags.TITLE_MOVE_TO_BOTTOM_WHEN_FULLSCREEN;
+                if (titleForVideoPlayer) flags |= updateWindowPreviewFlags.TITLE_MOVE_TO_BOTTOM_FOR_VIDEO_PLAYER;
+                
+                self._hideOrMove(this, flags);
+
+                // Dynamically act on text scaling changes
+                this._title.connectObject('notify::height', () => self._applyOverlayLayout(this), this);
+                this._icon.connectObject('notify::height', () => self._applyOverlayLayout(this), this);
             }
+        );
+    }
 
-            this._title.show();
+    _setupAdjustOverlayOffsets() {
+        const self = this;
+        this._objectPrototype.injectOrOverrideFunction(
+            WindowPreview.WindowPreview.prototype, '_adjustOverlayOffsets', true,
+            function() {
+                self._applyOverlayLayout(this);
+            }
+        );
+    }
 
+    _setupShowOverlay() {
+        const self = this;
 
+        this._objectPrototype.injectOrOverrideFunction(
+            WindowPreview.WindowPreview.prototype, 'showOverlay', false,
+            function(animate) {
+                if (!this._overlayEnabled || this._overlayShown)
+                    return;
 
-            // Remove title offset to avoid being covered by another window
-            const title_constraints = this._title.get_constraints();
-            for (const constraint of title_constraints) {
-                if (constraint instanceof Clutter.BindConstraint) {
-                    const coordinate = constraint.coordinate
-                    if (coordinate === Clutter.BindCoordinate.Y) {
-                        constraint.set_offset(0)
+                this._overlayShown = true;
+                this._restack();
+
+                const ongoingTransition = this._title.get_transition('opacity');
+                if (animate && ongoingTransition &&
+                    ongoingTransition.get_interval().peek_final_value() === 255)
+                    return;
+
+                const alwaysShowWindowClosebuttons = self._settings.get_boolean('always-show-window-closebuttons');
+                if (!alwaysShowWindowClosebuttons) {
+                    const toShow = this._windowCanClose() ? [this._closeButton] : [];
+
+                    toShow.forEach(a => {
+                        a.opacity = 0;
+                        a.show();
+                        a.ease({
+                            opacity: 255,
+                            duration: animate ? WindowPreview.WINDOW_OVERLAY_FADE_TIME : 0,
+                            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                        });
+                    });
+                }
+                
+                const [width, height] = this.window_container.get_size();
+                const { scaleFactor } = St.ThemeContext.get_for_stage(global.stage);
+                const window_active_size_inc = self._settings.get_int('window-active-size-inc');
+                const activeExtraSize = window_active_size_inc * 2 * scaleFactor;
+                const origSize = Math.max(width, height);
+                const scale = (origSize + activeExtraSize) / origSize;
+
+                // Trigger _adjustOverlayOffsets() via notify::scale-x
+                this.window_container.ease({
+                    scale_x: scale,
+                    scale_y: scale,
+                    duration: animate ? WindowPreview.WINDOW_SCALE_TIME : 0,
+                    mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                });
+
+                this.emit('show-chrome');
+
+                // Explicitly call the layout recalculation 
+                self._applyOverlayLayout(this);
+            }
+        );
+    }
+
+    _setupHideOverlay() {
+        const self = this;
+
+        this._objectPrototype.injectOrOverrideFunction(
+            WindowPreview.WindowPreview.prototype, 'hideOverlay', false,
+            function(animate) {
+                if (!this._overlayShown)
+                    return;
+
+                this._overlayShown = false;
+                this._restack();
+
+                const ongoingTransition = this._title.get_transition('opacity');
+                if (animate && ongoingTransition &&
+                    ongoingTransition.get_interval().peek_final_value() === 0)
+                    return;
+
+                const alwaysShowWindowClosebuttons = self._settings.get_boolean('always-show-window-closebuttons');
+                if (!alwaysShowWindowClosebuttons) {
+                    [this._closeButton].forEach(a => {
+                        a.opacity = 255;
+                        a.ease({
+                            opacity: 0,
+                            duration: animate ? WindowPreview.WINDOW_OVERLAY_FADE_TIME : 0,
+                            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                            onComplete: () => a.hide(),
+                        });
+                    });   
+                }
+                
+                this.window_container.ease({
+                    scale_x: 1,
+                    scale_y: 1,
+                    duration: animate ? WindowPreview.WINDOW_SCALE_TIME : 0,
+                    mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                });
+
+                self._applyOverlayLayout(this);
+            }
+        );
+    }
+
+    // --- Layout Engine Methods ---
+
+    _applyOverlayLayout(windowPreview) {
+        if (!windowPreview || !windowPreview.get_stage()) return;
+        
+        const {scaleFactor} = St.ThemeContext.get_for_stage(global.stage);
+        
+        // Base gap relative to DPI
+        const GAP = 2 * scaleFactor; 
+        
+        const titleHeight = windowPreview._title.get_height();
+        
+        const titlePos = this._settings.get_string('window-title-position');
+        const iconPos = this._settings.get_string('app-icon-position');
+        
+        const titleFactor = this._positionFactor(titlePos);
+        const iconFactor = this._positionFactor(iconPos);
+        
+        // 1. Reset standard translations
+        windowPreview._title.translation_y = 0;
+        windowPreview._icon.translation_y = 0;
+
+        // 2. Clear out legacy BindConstraints from title and icon completely
+        this._clearBindConstraints(windowPreview._title);
+        this._clearBindConstraints(windowPreview._icon);
+
+        if (titleFactor === iconFactor) {
+            // Stacked Block mode: User wants both at Center or both at Bottom.
+            // We lock them together. Title goes BELOW Icon to maintain the pattern.
+            
+            this._setYAlign(windowPreview._title, titleFactor);
+            this._setYAlign(windowPreview._icon, titleFactor);
+            
+            windowPreview._title.translation_y = 0;
+            windowPreview._icon.translation_y = -(titleHeight + GAP);
+        } else {
+            // Independent Zoning Mode: Title and Icon are in entirely different zones.
+            // They just snap to their anchors naturally.
+            this._setYAlign(windowPreview._title, titleFactor);
+            this._setYAlign(windowPreview._icon, iconFactor);
+        }
+        
+        if (windowPreview._title.get_stage()) {
+            windowPreview._title.ensure_style();
+        }
+        if (windowPreview._icon.get_stage()) {
+            windowPreview._icon.ensure_style();
+        }
+    }
+
+    _applyTitleFontSize(windowPreview) {
+        const fontSize = this._settings.get_int('title-font-size');
+        // Check if there's actually a font size, zero means default
+        if (fontSize && fontSize > 0) {
+            windowPreview._title.set_style(`font-size: ${fontSize}pt;`);
+        } else {
+            windowPreview._title.set_style(null);
+        }
+        if (windowPreview._title.get_stage()) {
+            windowPreview._title.ensure_style();
+        }
+    }
+
+    _clearBindConstraints(widget) {
+        for (const constraint of [...widget.get_constraints()]) {
+            if (constraint instanceof Clutter.BindConstraint &&
+                (constraint.coordinate === Clutter.BindCoordinate.Y || 
+                 constraint.coordinate === Clutter.BindCoordinate.POSITION)) {
+                widget.remove_constraint(constraint);
+            }
+        }
+    }
+
+    _setYAlign(widget, factor) {
+        for (const constraint of widget.get_constraints()) {
+            if (constraint instanceof Clutter.AlignConstraint &&
+                constraint.align_axis === Clutter.AlignAxis.Y_AXIS) {
+                constraint.set_factor(factor);
+                return;
+            }
+        }
+        
+        const parent = widget.get_parent();
+        if (parent) {
+            const c = new Clutter.AlignConstraint({ source: parent, align_axis: Clutter.AlignAxis.Y_AXIS, factor });
+            widget.add_constraint(c);
+        }
+    }
+
+    _positionFactor(positionString) {
+        return positionString === 'Center' ? POSITION_CENTER : POSITION_BOTTOM;
+    }
+
+    _hideOrMove(windowPreview, flags) {
+        const window_is_fullscreen = windowPreview.metaWindow.is_fullscreen()
+        if (window_is_fullscreen) {
+            if (flags & updateWindowPreviewFlags.ICON_SHOW_OR_HIDE_WHEN_FULLSCREEN) {
+                windowPreview._icon.hide();
+            }
+            if (flags & updateWindowPreviewFlags.TITLE_MOVE_TO_BOTTOM_WHEN_FULLSCREEN) {
+                this._setYAlign(windowPreview._title, POSITION_BOTTOM);
+            }
+            return;
+        }
+
+        if (flags & (updateWindowPreviewFlags.ICON_SHOW_OR_HIDE_FOR_VIDEO_PLAYER 
+                    | updateWindowPreviewFlags.TITLE_MOVE_TO_BOTTOM_FOR_VIDEO_PLAYER)) {
+            const app = this._windowTracker.get_window_app(windowPreview.metaWindow);
+            const app_info = app?.get_app_info();
+            let recheck = false;
+            const categories = app_info?.get_categories();
+            
+            if (categories) {
+                const categoriesArr = categories.split(';')
+                for (const category of categoriesArr) {
+                    if (category === 'Video' || category === 'TV') {
+                        if (flags & updateWindowPreviewFlags.ICON_SHOW_OR_HIDE_FOR_VIDEO_PLAYER) {
+                            windowPreview._icon.hide();
+                        }
+                        if (flags & updateWindowPreviewFlags.TITLE_MOVE_TO_BOTTOM_FOR_VIDEO_PLAYER) {
+                            this._setYAlign(windowPreview._title, POSITION_BOTTOM);
+                        }
+                        return;
+                    } 
+                    if (category === 'Player') {
+                        recheck = true;
                     }
                 }
             }
 
-            _updateAppIcon(this);
-            _updateTitle(this);
-
-            let flags = 0;
-            const iconWhenFullscreen = _settings.get_boolean('do-not-show-app-icon-when-fullscreen');
-            const iconForVideoPlayer = _settings.get_boolean('hide-icon-for-video-player');
-            if (iconWhenFullscreen) flags |= updateWindowPreviewFlags.ICON_SHOW_OR_HIDE_WHEN_FULLSCREEN;
-            if (iconForVideoPlayer) flags |= updateWindowPreviewFlags.ICON_SHOW_OR_HIDE_FOR_VIDEO_PLAYER;
-            const titleWhenFullscreen = _settings.get_boolean('move-window-title-to-bottom-when-fullscreen');
-            const titleForVideoPlayer = _settings.get_boolean('move-window-title-to-bottom-for-video-player');
-            if (titleWhenFullscreen) flags |= updateWindowPreviewFlags.TITLE_MOVE_TO_BOTTOM_WHEN_FULLSCREEN;
-            if (titleForVideoPlayer) flags |= updateWindowPreviewFlags.TITLE_MOVE_TO_BOTTOM_FOR_VIDEO_PLAYER;
-            _hideOrMove(this, flags);
-        });
-
-        _objectPrototype.injectOrOverrideFunction(WindowPreview.WindowPreview.prototype, '_adjustOverlayOffsets', true, function() {
-            // nothing
-
-        });
-
-        // Override showOverlay to always keep titles visible
-        _objectPrototype.injectOrOverrideFunction(WindowPreview.WindowPreview.prototype, 'showOverlay', false, function(animate) {
-            if (!this._overlayEnabled)
-                return;
-
-            if (this._overlayShown)
-                return;
-
-            this._overlayShown = true;
-            this._restack();
-
-            // If we're supposed to animate and an animation in our direction
-            // is already happening, let that one continue
-            const ongoingTransition = this._title.get_transition('opacity');
-            if (animate &&
-                ongoingTransition &&
-                ongoingTransition.get_interval().peek_final_value() === 255)
-                return;
-
-            _alwaysShowWindowClosebuttons = _settings.get_boolean('always-show-window-closebuttons');
-            if (!_alwaysShowWindowClosebuttons) {
-                const toShow = this._windowCanClose() ? [this._closeButton] : [];
-
-                toShow.forEach(a => {
-                    a.opacity = 0;
-                    a.show();
-                    a.ease({
-                        opacity: 255,
-                        duration: animate ? WindowPreview.WINDOW_OVERLAY_FADE_TIME : 0,
-                        mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-                    });
-                });
+            if (recheck) {
+                const supported_types = app_info?.get_supported_types();
+                if (supported_types) {
+                    for (const supported_type of supported_types) {
+                        if (supported_type.startsWith('video/')) {
+                            if (flags & updateWindowPreviewFlags.ICON_SHOW_OR_HIDE_FOR_VIDEO_PLAYER) {
+                                windowPreview._icon.hide();
+                            }
+                            if (flags & updateWindowPreviewFlags.TITLE_MOVE_TO_BOTTOM_FOR_VIDEO_PLAYER) {
+                                this._setYAlign(windowPreview._title, POSITION_BOTTOM);
+                            }
+                            return;
+                        }
+                    }
+                }
             }
-            
-            const [width, height] = this.window_container.get_size();
-            const { scaleFactor } = St.ThemeContext.get_for_stage(global.stage);
-            const window_active_size_inc = _settings.get_int('window-active-size-inc');
-            const activeExtraSize = window_active_size_inc * 2 * scaleFactor;
-            const origSize = Math.max(width, height);
-            const scale = (origSize + activeExtraSize) / origSize;
-
-            // Trigger _adjustOverlayOffsets() via notify::scale-x
-            this.window_container.ease({
-                scale_x: scale,
-                scale_y: scale,
-                duration: animate ? WindowPreview.WINDOW_SCALE_TIME : 0,
-                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-            });
-
-            this.emit('show-chrome');
-        });
-
-        // Override hideOverlay to always keep titles visible
-        _objectPrototype.injectOrOverrideFunction(WindowPreview.WindowPreview.prototype, 'hideOverlay', false, function(animate) {
-            if (!this._overlayShown)
-                return;
-
-            this._overlayShown = false;
-            this._restack();
-
-            // If we're supposed to animate and an animation in our direction
-            // is already happening, let that one continue
-            const ongoingTransition = this._title.get_transition('opacity');
-            if (animate &&
-                ongoingTransition &&
-                ongoingTransition.get_interval().peek_final_value() === 0)
-                return;
-
-
-            if (!_alwaysShowWindowClosebuttons) {
-                [this._closeButton].forEach(a => {
-                    a.opacity = 255;
-                    a.ease({
-                        opacity: 0,
-                        duration: animate ? WindowPreview.WINDOW_OVERLAY_FADE_TIME : 0,
-                        mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-                        onComplete: () => a.hide(),
-                    });
-                });   
-            }
-            
-            this.window_container.ease({
-                scale_x: 1,
-                scale_y: 1,
-                duration: animate ? WindowPreview.WINDOW_SCALE_TIME : 0,
-                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-            });
-        });
-
-
+        }
     }
 
-    disable() {
-        // Destroy the created object
-        if (_settings) {
-            _settings = null;
+    _updateTitle(windowPreview) {
+        const windowTitlePosition = this._settings.get_string('window-title-position');
+        this._setYAlign(windowPreview._title, this._positionFactor(windowTitlePosition));
+    }
+
+    _updateAppIcon(windowPreview) {
+        const show_app_icon = this._settings.get_boolean('show-app-icon');
+        if (!show_app_icon) {
+            windowPreview._icon.hide();
+            return;
         }
 
-        if (customWorkspace) {
-            customWorkspace.disable();
-            customWorkspace = null;
-        }
-
-        if (_objectPrototype) {
-            _objectPrototype.removeInjections(WindowPreview.WindowPreview.prototype);
-            _objectPrototype = null;
-        }
-
-        if (windowTracker) {
-            windowTracker = null;
-        }
-
+        const appIconPosition = this._settings.get_string('app-icon-position');
+        this._setYAlign(windowPreview._icon, this._positionFactor(appIconPosition));
     }
 }

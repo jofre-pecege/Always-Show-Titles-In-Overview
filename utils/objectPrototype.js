@@ -1,9 +1,6 @@
-/* exported ObjectPrototype */
-
 export const ObjectPrototype = class ObjectPrototype {
-    
     constructor() {
-        this.injections = {};
+        this.injections = new Map();
     }
 
     injectOrOverrideFunction(objectPrototype, functionName, injected, targetFunction) {
@@ -11,25 +8,22 @@ export const ObjectPrototype = class ObjectPrototype {
     
         objectPrototype[functionName] = function() {
             let returnValue;
-    
             if (injected && originalFunction !== undefined) {
                 returnValue = originalFunction.apply(this, arguments);
             }
-    
             let injectedReturnValue = targetFunction.apply(this, arguments);
             if (returnValue === undefined) {
                 returnValue = injectedReturnValue;
             }
-    
             return returnValue;
         }
     
-        this.injections[objectPrototype.constructor.name+':'+functionName] = originalFunction;
+        this.injections.set(objectPrototype.constructor.name+':'+functionName, originalFunction);
         return originalFunction;
     }
 
     removeInjections(objectPrototype) {
-        for (let prototypeFunctionName in this.injections) {
+        for (let prototypeFunctionName of this.injections.keys()) {
             const functionNameArr = prototypeFunctionName.split(':');
             const objectPrototypeName = functionNameArr[0];
             if (objectPrototype.constructor.name !== objectPrototypeName) {
@@ -37,10 +31,10 @@ export const ObjectPrototype = class ObjectPrototype {
             }
 
             const functionName = functionNameArr[1];
-            if (this.injections[prototypeFunctionName] === undefined) {
+            if (!this.injections.has(prototypeFunctionName) || this.injections.get(prototypeFunctionName) === undefined) {
                 delete objectPrototype[functionName];
             } else {
-                objectPrototype[functionName] = this.injections[prototypeFunctionName];
+                objectPrototype[functionName] = this.injections.get(prototypeFunctionName);
             }
         }
     }

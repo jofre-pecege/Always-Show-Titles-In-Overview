@@ -108,37 +108,18 @@ const Settings = GObject.registerClass({
         this.show_app_icon_switch = this._builder.get_object('show_app_icon_switch');
         this.show_app_icon_switch.connect('notify::active', (widget) => {
             const active = widget.active;
-            this._settings.set_boolean('show-app-icon', active);
             this._set_sensitive_for_show_app_icon_switch(active);
         });
 
         this._renderWindowTitlePosition();
 
         this.move_window_title_to_bottom_when_fullscreen_switch = this._builder.get_object('move_window_title_to_bottom_when_fullscreen_switch');
-        this.move_window_title_to_bottom_when_fullscreen_switch.connect('notify::active', (widget) => {
-            const active = widget.active;
-            this._settings.set_boolean('move-window-title-to-bottom-when-fullscreen', active);
-        });
-
         this.move_window_title_to_bottom_for_video_player_switch = this._builder.get_object('move_window_title_to_bottom_for_video_player_switch');
-        this.move_window_title_to_bottom_for_video_player_switch.connect('notify::active', (widget) => {
-            const active = widget.active;
-            this._settings.set_boolean('move-window-title-to-bottom-for-video-player', active);
-        });
 
         this._renderAppIconPosition();
 
         this.do_not_show_app_icon_when_fullscreen_switch = this._builder.get_object('do_not_show_app_icon_when_fullscreen_switch');
-        this.do_not_show_app_icon_when_fullscreen_switch.connect('notify::active', (widget) => {
-            const active = widget.active;
-            this._settings.set_boolean('do-not-show-app-icon-when-fullscreen', active);
-        });
-
         this.hide_icon_for_video_player_switch = this._builder.get_object('hide_icon_for_video_player_switch');
-        this.hide_icon_for_video_player_switch.connect('notify::active', (widget) => {
-            const active = widget.active;
-            this._settings.set_boolean('hide-icon-for-video-player', active);
-        });
 
         this.window_active_size_inc_scale = this._builder.get_object('window_active_size_inc_scale');
         this.window_active_size_inc_scale.set_format_value_func((scale, value) => {
@@ -158,6 +139,26 @@ const Settings = GObject.registerClass({
         this.window_active_size_inc_scale.connect('value-changed', (scale) => {
             const value = scale.get_value();
             this._settings.set_int('window-active-size-inc', value);
+        });
+
+        // Title font size scale
+        this.title_font_size_scale = this._builder.get_object('title_font_size_scale');
+        this.title_font_size_scale.set_format_value_func((scale, value) => {
+            return value === 0 ? 'Default' : value + ' pt';
+        });
+
+        this.title_font_size_scale.set_range(0, 24);
+        this.title_font_size_scale.set_value(this._settings.get_int('title-font-size'));
+        [0, 10, 14, 18, 24].forEach(num => {
+            this.title_font_size_scale.add_mark(num, Gtk.PositionType.TOP, num === 0 ? '0' : num.toString());
+        });
+
+        this.title_font_size_scale.connect('value-changed', (scale) => {
+            this._settings.set_int('title-font-size', scale.get_value());
+        });
+
+        this._settings.connect('changed::title-font-size', (settings) => {
+            this.title_font_size_scale.set_value(settings.get_int('title-font-size'));
         });
 
         this.hide_background_switch = this._builder.get_object('hide_background_switch');

@@ -87,9 +87,9 @@
       </description>
     </key>
     <key name="group-by-app" type="b">
-  <default>false</default>
-  <summary>Group windows by application</summary>
-</key>
+      <default>false</default>
+      <summary>Group windows by application</summary>
+    </key>
     <key name="title-font-size" type="i">
       <default>0</default>
       <summary>Window title font size in points (0 = use default)</summary>
